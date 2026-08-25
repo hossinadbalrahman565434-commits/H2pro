@@ -5,6 +5,7 @@
         android:label="H2pro المحاسبي"
         android:supportsRtl="true"
         android:theme="@style/Theme.H2pro">
+        <activity android:name=".SystemAdminActivity" android:exported="false" />
         <activity android:name=".SystemSetupActivity" android:exported="false" />
         <activity android:name=".ModulesActivity" android:exported="false" />
         <activity android:name=".DashboardActivity" android:exported="false" />
