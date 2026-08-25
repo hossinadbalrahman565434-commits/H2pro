@@ -29,6 +29,19 @@ jobs:
         run: |
           printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
 
+      - name: إصلاح صياغة Kotlin قبل البناء
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/h2pro/accounting/AccountingDb.kt')
+          s = p.read_text(encoding='utf-8')
+          old = 'fun invoiceLines(documentId:Long):List<String>='
+          new = 'fun invoiceLines(documentId:Long):List<String> ='
+          if old not in s:
+              raise SystemExit('النمط المتوقع غير موجود في AccountingDb.kt')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: بناء APK
         run: gradle :app:assembleDebug --stacktrace
 
