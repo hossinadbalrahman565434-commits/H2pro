@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="true"
-        android:label="H2pro المحاسبي"
+        android:icon="@drawable/h2pro_icon"
+        android:roundIcon="@drawable/h2pro_icon"
+        android:label="H2pro"
         android:supportsRtl="true"
         android:theme="@style/Theme.H2pro">
         <activity android:name=".SystemAdminActivity" android:exported="false" />
