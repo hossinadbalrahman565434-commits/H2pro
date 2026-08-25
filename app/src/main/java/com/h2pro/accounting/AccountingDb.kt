@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", null, 3) {
+class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) { createTables(db); seed(db) }
     private fun createTables(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS company(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, address TEXT, logo TEXT)")
@@ -25,6 +25,10 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
         db.execSQL("CREATE TABLE IF NOT EXISTS invoice_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, item_id INTEGER, qty REAL, price REAL, total REAL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS inventory_movements(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, item_id INTEGER, kind TEXT, qty REAL, price REAL, reference TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, user_no TEXT, action TEXT, details TEXT)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_invoice_lines_document ON invoice_lines(document_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_inventory_item ON inventory_movements(item_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_documents_kind_date ON documents(kind,date)")
     }
     private fun seed(db: SQLiteDatabase) {
         if (count("company", db) == 0L) db.execSQL("INSERT INTO company(id,name,phone,address,logo) VALUES(1,'شركتي التجارية','01-234567','صنعاء، اليمن','')")
@@ -62,7 +66,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun addCashbox(name:String,no:String,currency:String){insert("cashboxes",ContentValues().apply{put("name",name);put("box_no",no);put("currency",currency)})}
     fun addAccount(code:String,name:String,type:String,parentId:Long=0,currency:String="محلي")=try{insert("accounts",ContentValues().apply{put("code",code);put("name",name);put("type",type);put("parent_id",parentId);put("level",if(parentId==0L)1 else 2);put("currency",currency)})>0}catch(_:Exception){false}
     fun accounts():List<Account>{val out=mutableListOf<Account>();readableDatabase.rawQuery("SELECT id,code,name,type,parent_id,level,currency FROM accounts WHERE active=1 ORDER BY code",null).use{c->while(c.moveToNext())out.add(Account(c.getLong(0),c.getString(1),c.getString(2),c.getString(3),c.getLong(4),c.getInt(5),c.getString(6)))};return out}
-    fun saveJournal(date:String,description:String,lines:List<JournalLine>,reference:String=""):Boolean{if(lines.sumOf{it.debit} != lines.sumOf{it.credit}) return false;val d=writableDatabase;d.beginTransaction();return try{val jid=d.insertOrThrow("journals",null,ContentValues().apply{put("date",date);put("description",description);put("reference",reference)});lines.forEach{l->d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",l.accountId);put("debit",l.debit);put("credit",l.credit);put("currency",l.currency);put("rate",l.rate)})};d.setTransactionSuccessful();true}catch(_:Exception){false}finally{d.endTransaction()}}
+    fun saveJournal(date:String,description:String,lines:List<JournalLine>,reference:String=""):Boolean{val debit=lines.sumOf{it.debit};val credit=lines.sumOf{it.credit};if(lines.size<2||debit<=0||kotlin.math.abs(debit-credit)>0.005)return false;val d=writableDatabase;d.beginTransaction();return try{val jid=d.insertOrThrow("journals",null,ContentValues().apply{put("date",date);put("description",description);put("reference",reference)});lines.forEach{l->d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",l.accountId);put("debit",l.debit);put("credit",l.credit);put("currency",l.currency);put("rate",l.rate)})};d.setTransactionSuccessful();true}catch(_:Exception){false}finally{d.endTransaction()}}
     fun journalCount():Long=count("journals")
     fun addContact(kind:String,name:String,phone:String,address:String=""){insert("contacts",ContentValues().apply{put("kind",kind);put("name",name);put("phone",phone);put("address",address)})}
     fun contacts(kind:String): List<String> = queryStrings("SELECT name||CASE WHEN phone='' THEN '' ELSE ' - '||phone END FROM contacts WHERE kind=? ORDER BY name",arrayOf(kind))
@@ -73,6 +77,37 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun inventoryValue():Double=readableDatabase.rawQuery("SELECT COALESCE(SUM(qty*buy),0) FROM items",null).use{if(it.moveToFirst())it.getDouble(0)else 0.0}
     fun lowStock():Long=readableDatabase.rawQuery("SELECT COUNT(*) FROM items WHERE qty<=min_qty",null).use{if(it.moveToFirst())it.getLong(0)else 0}
     fun saveInventoryMovement(itemId:Long,date:String,kind:String,qty:Double,price:Double,ref:String){insert("inventory_movements",ContentValues().apply{put("item_id",itemId);put("date",date);put("kind",kind);put("qty",qty);put("price",price);put("reference",ref)})}
+
+    /** فاتورة محاسبية متكاملة: تحفظ الرأس والتفاصيل وتحدث المخزون وتسجل القيد في معاملة واحدة. */
+    fun saveInvoice(kind:String,date:String,party:String,lines:List<InvoiceLine>,reference:String="",notes:String=""):Long {
+        if(lines.isEmpty() || lines.any{it.qty<=0 || it.price<0}) return -1
+        val total=lines.sumOf{it.qty*it.price}; if(total<=0) return -1
+        val sale=kind=="بيع"; val d=writableDatabase; d.beginTransaction()
+        return try {
+            lines.forEach { line ->
+                val c=d.rawQuery("SELECT qty FROM items WHERE id=?",arrayOf(line.itemId.toString())); c.use { if(!it.moveToFirst()) throw IllegalArgumentException("الصنف غير موجود"); val stock=it.getDouble(0); if(sale && stock<line.qty) throw IllegalArgumentException("الرصيد غير كاف للصنف ${line.itemId}") }
+            }
+            val doc=d.insertOrThrow("documents",null,ContentValues().apply{put("kind",kind);put("date",date);put("name",party);put("amount",total);put("reference",reference);put("notes",notes)})
+            lines.forEach { line ->
+                d.insertOrThrow("invoice_lines",null,ContentValues().apply{put("document_id",doc);put("item_id",line.itemId);put("qty",line.qty);put("price",line.price);put("total",line.qty*line.price)})
+                val delta=if(sale) -line.qty else line.qty
+                d.execSQL("UPDATE items SET qty=qty+?, buy=CASE WHEN ?='شراء' THEN ? ELSE buy END, sale=CASE WHEN ?='بيع' THEN ? ELSE sale END WHERE id=?",arrayOf(delta,kind,line.price,kind,line.price,line.itemId))
+                d.insertOrThrow("inventory_movements",null,ContentValues().apply{put("date",date);put("item_id",line.itemId);put("kind",kind);put("qty",line.qty);put("price",line.price);put("reference",reference)})
+            }
+            val cash=findAccountId(d,"101"); val stock=findAccountId(d,"103"); val revenue=findAccountId(d,"401"); val purchases=findAccountId(d,"501")
+            if(cash>0 && (if(sale) revenue>0 else purchases>0)) {
+                val debitAccount=if(sale) cash else purchases; val creditAccount=if(sale) revenue else cash
+                val jid=d.insertOrThrow("journals",null,ContentValues().apply{put("date",date);put("description",if(sale)"فاتورة بيع: $party" else "فاتورة شراء: $party");put("reference",reference)})
+                d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",debitAccount);put("debit",total);put("credit",0.0)})
+                d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",creditAccount);put("debit",0.0);put("credit",total)})
+            }
+            d.setTransactionSuccessful();doc
+        }catch(_:Exception){-1}finally{d.endTransaction()}
+    }
+    private fun findAccountId(d:SQLiteDatabase,code:String):Long=d.rawQuery("SELECT id FROM accounts WHERE code=?",arrayOf(code)).use{if(it.moveToFirst())it.getLong(0)else 0}
+    fun invoiceTotal(documentId:Long):Double=readableDatabase.rawQuery("SELECT COALESCE(SUM(total),0) FROM invoice_lines WHERE document_id=?",arrayOf(documentId.toString())).use{if(it.moveToFirst())it.getDouble(0)else 0.0}
+    fun invoiceLines(documentId:Long):List<String>=queryStrings("SELECT i.code||' - '||i.name||' | '||l.qty||' × '||l.price||' = '||l.total FROM invoice_lines l JOIN items i ON i.id=l.item_id WHERE l.document_id=?",arrayOf(documentId.toString()))
+    fun customerSupplierBalance(kind:String,name:String):Double=readableDatabase.rawQuery("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount ELSE -amount END),0) FROM documents WHERE name=?",arrayOf(if(kind=="عميل")"بيع" else "شراء",name)).use{if(it.moveToFirst())it.getDouble(0)else 0.0}
     fun accountBalance(id:Long):Double=readableDatabase.rawQuery("SELECT COALESCE(SUM(debit-credit),0) FROM journal_lines WHERE account_id=?",arrayOf(id.toString())).use{if(it.moveToFirst())it.getDouble(0)else 0.0}
     fun trialBalance(): List<String> = accounts().map{a->"${a.code} - ${a.name}: ${"%.2f".format(accountBalance(a.id))}"}.filter{!it.endsWith(": 0.00")}
     fun audit(user:String,action:String,details:String){insert("audit_log",ContentValues().apply{put("date",System.currentTimeMillis().toString());put("user_no",user);put("action",action);put("details",details)})}
@@ -82,3 +117,4 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
 data class Company(val name:String,val phone:String,val address:String,val logo:String)
 data class Account(val id:Long,val code:String,val name:String,val type:String,val parentId:Long=0,val level:Int=1,val currency:String="محلي")
 data class JournalLine(val accountId:Long,val debit:Double,val credit:Double,val currency:String="محلي",val rate:Double=1.0)
+data class InvoiceLine(val itemId:Long,val qty:Double,val price:Double)
