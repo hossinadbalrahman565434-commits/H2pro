@@ -10,10 +10,10 @@ import androidx.appcompat.app.AppCompatActivity
 
 class PurchaseActivity : AppCompatActivity() {
     private val db by lazy { AccountingDb(this) }
-    private val bg=Color.rgb(12,28,40); private val surface=Color.rgb(24,45,60); private val gold=Color.rgb(198,161,91); private val light=Color.rgb(231,201,130); private val text=Color.rgb(245,241,232)
+    private val bg=Color.rgb(12,28,40); private val surface=Color.rgb(24,45,60); private val gold=Color.rgb(198,161,91); private val light=Color.rgb(231,201,130); private val textColor=Color.rgb(245,241,232)
     private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
-    private fun tv(s:String,size:Float=16f,bold:Boolean=false)=TextView(this).apply{this.text=s;textSize=size;setTextColor(text);gravity=Gravity.RIGHT;if(bold)setTypeface(typeface,1);setPadding(dp(4),dp(5),dp(4),dp(5))}
-    private fun field(h:String)=EditText(this).apply{hint=h;setHintTextColor(Color.LTGRAY);setTextColor(text);gravity=Gravity.RIGHT;setSingleLine(true);setPadding(dp(10),0,dp(10),0)}
+    private fun tv(s:String,size:Float=16f,bold:Boolean=false)=TextView(this).apply{this.text=s;textSize=size;setTextColor(textColor);gravity=Gravity.RIGHT;if(bold)setTypeface(typeface,1);setPadding(dp(4),dp(5),dp(4),dp(5))}
+    private fun field(h:String)=EditText(this).apply{hint=h;setHintTextColor(Color.LTGRAY);setTextColor(textColor);gravity=Gravity.RIGHT;setSingleLine(true);setPadding(dp(10),0,dp(10),0)}
     private fun btn(s:String,a:()->Unit)=Button(this).apply{this.text=s;isAllCaps=false;setTextColor(light);minHeight=dp(52);background=GradientDrawable().apply{cornerRadius=dp(8).toFloat();setColor(surface);setStroke(dp(1),gold)};setOnClickListener{a()}}
     private fun root(title:String)=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;layoutDirection=LinearLayout.LAYOUT_DIRECTION_RTL;setBackgroundColor(bg);setPadding(dp(14),dp(14),dp(14),dp(14));addView(tv(title,23f,true))}
     private fun show(r:LinearLayout){setContentView(ScrollView(this).apply{addView(r,ViewGroup.LayoutParams(-1,-1))})}
