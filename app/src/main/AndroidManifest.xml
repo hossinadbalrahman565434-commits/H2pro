@@ -7,6 +7,9 @@
         android:label="H2pro"
         android:supportsRtl="true"
         android:theme="@style/Theme.H2pro">
+        <activity android:name=".FinancialReportsActivity" android:exported="false" />
+        <activity android:name=".ReturnsActivity" android:exported="false" />
+        <activity android:name=".MultiInvoiceActivity" android:exported="false" />
         <activity android:name=".SalesActivity" android:exported="false" />
         <activity android:name=".PurchaseActivity" android:exported="false" />
         <activity android:name=".InventoryActivity" android:exported="false" />
