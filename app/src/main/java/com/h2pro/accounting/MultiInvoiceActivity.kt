@@ -21,6 +21,10 @@ class MultiInvoiceActivity : AppCompatActivity() {
         val kind=intent.getStringExtra("kind") ?: "بيع"; val r=root(if(kind=="بيع")"فاتورة بيع متعددة الأصناف" else "فاتورة شراء متعددة الأصناف")
         val party=field(if(kind=="بيع")"اسم العميل" else "اسم المورد"); val date=field("التاريخ"); val ref=field("رقم الفاتورة / المرجع"); val notes=field("البيان")
         listOf(date,party,ref,notes).forEach{r.addView(it,LinearLayout.LayoutParams(-1,dp(48)).apply{setMargins(0,dp(3),0,dp(3))})}
+        r.addView(tv("نوع السداد",14f,true))
+        val payment=Spinner(this).apply{adapter=ArrayAdapter(this@MultiInvoiceActivity,android.R.layout.simple_spinner_dropdown_item,arrayOf("نقدي","آجل"))}
+        r.addView(payment,LinearLayout.LayoutParams(-1,dp(50)).apply{setMargins(0,dp(3),0,dp(6))})
+        r.addView(tv(if(kind=="بيع")"الآجل يسجل على حساب العميل" else "الآجل يسجل على حساب المورد",12f))
         val rows=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         fun addRow(){
             val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;layoutDirection=LinearLayout.LAYOUT_DIRECTION_RTL}
@@ -29,7 +33,7 @@ class MultiInvoiceActivity : AppCompatActivity() {
         }
         addRow();r.addView(tv("الأصناف الحالية",15f,true));r.addView(tv(db.items().joinToString("\n"),12f));r.addView(rows)
         r.addView(btn("+ إضافة صنف"){addRow()})
-        r.addView(btn("حفظ الفاتورة"){ val lines=mutableListOf<InvoiceLine>(); for(i in 0 until rows.childCount){val row=rows.getChildAt(i) as LinearLayout;val code=row.getChildAt(0) as EditText;val qty=row.getChildAt(1) as EditText;val price=row.getChildAt(2) as EditText;val id=findH2proItemId(code.text.toString().trim());val q=qty.text.toString().toDoubleOrNull()?:0.0;val p=price.text.toString().toDoubleOrNull()?:0.0;if(id>0&&q>0)lines.add(InvoiceLine(id,q,p))};if(party.text.isBlank()||lines.isEmpty()){toast("أدخل الطرف وصنفًا واحدًا على الأقل");return@btn};val id=db.saveInvoice(kind,date.text.toString().ifBlank{"2026-08-26"},party.text.toString(),lines,ref.text.toString(),notes.text.toString());toast(if(id>0)"تم حفظ الفاتورة وتحديث المخزون والقيد" else "تعذر حفظ الفاتورة أو الرصيد غير كاف");if(id>0)finish()})
+        r.addView(btn("حفظ الفاتورة"){ val lines=mutableListOf<InvoiceLine>(); for(i in 0 until rows.childCount){val row=rows.getChildAt(i) as LinearLayout;val code=row.getChildAt(0) as EditText;val qty=row.getChildAt(1) as EditText;val price=row.getChildAt(2) as EditText;val id=findH2proItemId(code.text.toString().trim());val q=qty.text.toString().toDoubleOrNull()?:0.0;val p=price.text.toString().toDoubleOrNull()?:0.0;if(id>0&&q>0)lines.add(InvoiceLine(id,q,p))};if(party.text.isBlank()||lines.isEmpty()){toast("أدخل الطرف وصنفًا واحدًا على الأقل");return@btn};val mode=payment.selectedItem?.toString()?:"نقدي";val id=db.saveInvoice(kind,date.text.toString().ifBlank{"2026-08-26"},party.text.toString(),lines,ref.text.toString(),notes.text.toString(),mode);toast(if(id>0)"تم حفظ الفاتورة وتحديث المخزون والقيد" else "تعذر حفظ الفاتورة أو الرصيد غير كاف");if(id>0)finish()})
         r.addView(btn("رجوع"){finish()});setContentView(ScrollView(this).apply{addView(r,ViewGroup.LayoutParams(-1,-1))})
     }
     private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
