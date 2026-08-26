@@ -99,9 +99,10 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
                 val cost = d.rawQuery("SELECT buy FROM items WHERE id=?", arrayOf(line.itemId.toString())).use { if (it.moveToFirst()) it.getDouble(0) else 0.0 }
                 totalCost += cost * line.qty
                 d.insertOrThrow("invoice_lines", null, ContentValues().apply { put("document_id", doc); put("item_id", line.itemId); put("qty", line.qty); put("price", line.price); put("total", line.qty * line.price) })
-                val newQty = if (sale) -line.qty else line.qty
-                val values = ContentValues().apply { put("qty", newQty); if (kind == "شراء") put("buy", line.price); if (kind == "بيع") put("sale", line.price) }
+                val delta = if (sale) -line.qty else line.qty
+                val values = ContentValues().apply { if (kind == "شراء") put("buy", line.price); if (kind == "بيع") put("sale", line.price) }
                 d.update("items", values, "id=?", arrayOf(line.itemId.toString()))
+                d.execSQL("UPDATE items SET qty=qty+? WHERE id=?", arrayOf(delta, line.itemId.toString()))
                 saveInventoryMovementWithDb(d, line.itemId, date, kind, line.qty, if (sale) cost else line.price, reference)
             }
             val cash = findAccountId(d, "101"); val inventory = findAccountId(d, "103"); val revenue = findAccountId(d, "401"); val ar = findAccountId(d, "202"); val ap = findAccountId(d, "201"); val cogs = findAccountId(d, "503")
