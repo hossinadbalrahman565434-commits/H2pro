@@ -35,11 +35,12 @@ jobs:
           from pathlib import Path
           p = Path('app/src/main/java/com/h2pro/accounting/AccountingDb.kt')
           s = p.read_text(encoding='utf-8')
-          old = 'fun invoiceLines(documentId:Long):List<String>='
-          new = 'fun invoiceLines(documentId:Long):List<String> ='
-          if old not in s:
-              raise SystemExit('النمط المتوقع غير موجود في AccountingDb.kt')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          for old, new in [
+              ('):List<String>=', '):List<String> ='),
+              ('):List<Account>=', '):List<Account> ='),
+          ]:
+              s = s.replace(old, new)
+          p.write_text(s, encoding='utf-8')
           PY
 
       - name: بناء APK
@@ -86,7 +87,6 @@ jobs:
             mkdir -p preview
             adb exec-out screencap -p > preview/01-login.png
 
-            # محاولة إدخال بيانات الدخول التجريبية ثم التقاط الشاشة الرئيسية
             adb shell input tap 540 820 || true
             adb shell input text 1 || true
             adb shell input tap 540 900 || true
