@@ -52,7 +52,7 @@ jobs:
     name: اختبار الدورة المحاسبية
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: جلب المشروع
         uses: actions/checkout@v4
@@ -68,7 +68,7 @@ jobs:
       - name: تفعيل AndroidX
         run: |
           printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
-      - name: تشغيل اختبارات الدورة على المحاكي بثبات
+      - name: تشغيل اختبارات الدورة على المحاكي
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -76,37 +76,8 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -noaudio -no-boot-anim -no-snapshot -wipe-data
           disable-animations: true
-          script: |
-            set -e
-            echo 'انتظار اتصال ADB وإقلاع Android بالكامل...'
-            adb wait-for-device
-            for i in $(seq 1 60); do
-              booted=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') || true
-              if [ "$booted" = "1" ]; then break; fi
-              sleep 2
-            done
-            test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
-            adb shell settings put global window_animation_scale 0
-            adb shell settings put global transition_animation_scale 0
-            adb shell settings put global animator_duration_scale 0
-            echo 'تشغيل الاختبار مع إعادة المحاولة عند انقطاع ADB...'
-            for attempt in 1 2 3; do
-              echo "محاولة الاختبار $attempt/3"
-              adb wait-for-device
-              if gradle :app:connectedDebugAndroidTest --stacktrace --no-daemon; then
-                echo 'نجح اختبار الدورة المحاسبية.'
-                exit 0
-              fi
-              if [ "$attempt" -lt 3 ]; then
-                echo 'فشل مؤقت؛ إعادة تهيئة ADB والمحاولة مرة أخرى...'
-                adb kill-server || true
-                adb start-server
-                sleep 5
-                adb wait-for-device
-              fi
-            done
-            echo 'فشل اختبار الدورة بعد 3 محاولات.'
-            exit 1
+          emulator-boot-timeout: 600
+          script: gradle :app:connectedDebugAndroidTest --stacktrace --no-daemon
 
   preview:
     name: معاينة التطبيق قبل التثبيت
@@ -128,8 +99,8 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -noaudio -no-boot-anim -no-snapshot -wipe-data
           disable-animations: true
+          emulator-boot-timeout: 600
           script: |
-            adb wait-for-device
             adb install -r apk/app-debug.apk
             adb shell am force-stop com.h2pro.accounting
             adb shell monkey -p com.h2pro.accounting 1
