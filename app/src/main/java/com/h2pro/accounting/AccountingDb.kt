@@ -49,7 +49,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     private fun ensureRequiredAccounts(db: SQLiteDatabase) {
         val assets = findAccountId(db, "1"); val liabilities = findAccountId(db, "2"); val income = findAccountId(db, "4"); val expenses = findAccountId(db, "5")
         val required = listOf(arrayOf("103","المخزون","أصول",assets,2),arrayOf("201","الموردون","خصوم",liabilities,2),arrayOf("202","العملاء","أصول",assets,2),arrayOf("401","المبيعات","إيرادات",income,2),arrayOf("402","مرتجعات المبيعات","إيرادات",income,2),arrayOf("503","تكلفة المبيعات","مصروفات",expenses,2))
-        required.forEach { a -> if (findAccountId(db, a[0].toString()) == 0L) db.insert("accounts", null, ContentValues().apply { put("code", a[0]); put("name", a[1]); put("type", a[2]); put("parent_id", a[3].toString().toLong()); put("level", a[4].toString().toInt()); put("currency", "محلي") }) }
+        required.forEach { a -> if (findAccountId(db, a[0].toString()) == 0L) db.insert("accounts", null, ContentValues().apply { put("code", a[0].toString()); put("name", a[1].toString()); put("type", a[2].toString()); put("parent_id", a[3].toString().toLong()); put("level", a[4].toString().toInt()); put("currency", "محلي") }) }
     }
     private fun count(table: String, db: SQLiteDatabase = writableDatabase): Long = db.rawQuery("SELECT COUNT(*) FROM $table", null).use { if (it.moveToFirst()) it.getLong(0) else 0 }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { createTables(db); seed(db); ensureRequiredAccounts(db) }
