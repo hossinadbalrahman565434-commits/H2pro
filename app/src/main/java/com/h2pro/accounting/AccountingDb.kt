@@ -77,16 +77,12 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun inventoryValue():Double=readableDatabase.rawQuery("SELECT COALESCE(SUM(qty*buy),0) FROM items",null).use{if(it.moveToFirst())it.getDouble(0)else 0.0}
     fun lowStock():Long=readableDatabase.rawQuery("SELECT COUNT(*) FROM items WHERE qty<=min_qty",null).use{if(it.moveToFirst())it.getLong(0)else 0}
     fun saveInventoryMovement(itemId:Long,date:String,kind:String,qty:Double,price:Double,ref:String){insert("inventory_movements",ContentValues().apply{put("item_id",itemId);put("date",date);put("kind",kind);put("qty",qty);put("price",price);put("reference",ref)})}
-
-    /** فاتورة محاسبية متكاملة: تحفظ الرأس والتفاصيل وتحدث المخزون وتسجل القيد في معاملة واحدة. */
     fun saveInvoice(kind:String,date:String,party:String,lines:List<InvoiceLine>,reference:String="",notes:String=""):Long {
         if(lines.isEmpty() || lines.any{it.qty<=0 || it.price<0}) return -1
         val total=lines.sumOf{it.qty*it.price}; if(total<=0) return -1
         val sale=kind=="بيع"; val d=writableDatabase; d.beginTransaction()
         return try {
-            lines.forEach { line ->
-                val c=d.rawQuery("SELECT qty FROM items WHERE id=?",arrayOf(line.itemId.toString())); c.use { if(!it.moveToFirst()) throw IllegalArgumentException("الصنف غير موجود"); val stock=it.getDouble(0); if(sale && stock<line.qty) throw IllegalArgumentException("الرصيد غير كاف للصنف ${line.itemId}") }
-            }
+            lines.forEach { line -> val c=d.rawQuery("SELECT qty FROM items WHERE id=?",arrayOf(line.itemId.toString())); c.use { if(!it.moveToFirst()) throw IllegalArgumentException("الصنف غير موجود"); val stock=it.getDouble(0); if(sale && stock<line.qty) throw IllegalArgumentException("الرصيد غير كاف للصنف ${line.itemId}") } }
             val doc=d.insertOrThrow("documents",null,ContentValues().apply{put("kind",kind);put("date",date);put("name",party);put("amount",total);put("reference",reference);put("notes",notes)})
             lines.forEach { line ->
                 d.insertOrThrow("invoice_lines",null,ContentValues().apply{put("document_id",doc);put("item_id",line.itemId);put("qty",line.qty);put("price",line.price);put("total",line.qty*line.price)})
@@ -94,12 +90,39 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
                 d.execSQL("UPDATE items SET qty=qty+?, buy=CASE WHEN ?='شراء' THEN ? ELSE buy END, sale=CASE WHEN ?='بيع' THEN ? ELSE sale END WHERE id=?",arrayOf(delta,kind,line.price,kind,line.price,line.itemId))
                 d.insertOrThrow("inventory_movements",null,ContentValues().apply{put("date",date);put("item_id",line.itemId);put("kind",kind);put("qty",line.qty);put("price",line.price);put("reference",reference)})
             }
-            val cash=findAccountId(d,"101"); val stock=findAccountId(d,"103"); val revenue=findAccountId(d,"401"); val purchases=findAccountId(d,"501")
+            val cash=findAccountId(d,"101"); val revenue=findAccountId(d,"401"); val purchases=findAccountId(d,"501")
             if(cash>0 && (if(sale) revenue>0 else purchases>0)) {
                 val debitAccount=if(sale) cash else purchases; val creditAccount=if(sale) revenue else cash
                 val jid=d.insertOrThrow("journals",null,ContentValues().apply{put("date",date);put("description",if(sale)"فاتورة بيع: $party" else "فاتورة شراء: $party");put("reference",reference)})
                 d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",debitAccount);put("debit",total);put("credit",0.0)})
                 d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",creditAccount);put("debit",0.0);put("credit",total)})
+            }
+            d.setTransactionSuccessful();doc
+        }catch(_:Exception){-1}finally{d.endTransaction()}
+    }
+    fun saveReturn(kind:String,date:String,party:String,lines:List<InvoiceLine>,reference:String="",notes:String=""):Long {
+        if(lines.isEmpty() || lines.any{it.qty<=0 || it.price<0}) return -1
+        val purchaseReturn=kind=="مرتجع شراء"; val d=writableDatabase; d.beginTransaction()
+        return try {
+            lines.forEach { line ->
+                val c=d.rawQuery("SELECT qty FROM items WHERE id=?",arrayOf(line.itemId.toString())); c.use { if(!it.moveToFirst()) throw IllegalArgumentException("الصنف غير موجود"); val stock=it.getDouble(0); if(purchaseReturn && stock<line.qty) throw IllegalArgumentException("الرصيد غير كاف للمرتجع") }
+            }
+            val total=lines.sumOf{it.qty*it.price}; if(total<=0) throw IllegalArgumentException("قيمة غير صحيحة")
+            val doc=d.insertOrThrow("documents",null,ContentValues().apply{put("kind",kind);put("date",date);put("name",party);put("amount",total);put("reference",reference);put("notes",notes)})
+            lines.forEach { line ->
+                d.insertOrThrow("invoice_lines",null,ContentValues().apply{put("document_id",doc);put("item_id",line.itemId);put("qty",line.qty);put("price",line.price);put("total",line.qty*line.price)})
+                val delta=if(purchaseReturn) -line.qty else line.qty
+                d.execSQL("UPDATE items SET qty=qty+? WHERE id=?",arrayOf(delta,line.itemId))
+                d.insertOrThrow("inventory_movements",null,ContentValues().apply{put("date",date);put("item_id",line.itemId);put("kind",kind);put("qty",line.qty);put("price",line.price);put("reference",reference)})
+            }
+            val cash=findAccountId(d,"101"); val revenue=findAccountId(d,"401"); val purchases=findAccountId(d,"501")
+            if(cash>0) {
+                val debit=if(purchaseReturn) cash else revenue; val credit=if(purchaseReturn) purchases else cash
+                if(debit>0 && credit>0) {
+                    val jid=d.insertOrThrow("journals",null,ContentValues().apply{put("date",date);put("description",kind+": "+party);put("reference",reference)})
+                    d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",debit);put("debit",total);put("credit",0.0)})
+                    d.insertOrThrow("journal_lines",null,ContentValues().apply{put("journal_id",jid);put("account_id",credit);put("debit",0.0);put("credit",total)})
+                }
             }
             d.setTransactionSuccessful();doc
         }catch(_:Exception){-1}finally{d.endTransaction()}
@@ -110,6 +133,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun customerSupplierBalance(kind:String,name:String):Double=readableDatabase.rawQuery("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount ELSE -amount END),0) FROM documents WHERE name=?",arrayOf(if(kind=="عميل")"بيع" else "شراء",name)).use{if(it.moveToFirst())it.getDouble(0)else 0.0}
     fun accountBalance(id:Long):Double=readableDatabase.rawQuery("SELECT COALESCE(SUM(debit-credit),0) FROM journal_lines WHERE account_id=?",arrayOf(id.toString())).use{if(it.moveToFirst())it.getDouble(0)else 0.0}
     fun trialBalance(): List<String> = accounts().map{a->"${a.code} - ${a.name}: ${"%.2f".format(accountBalance(a.id))}"}.filter{!it.endsWith(": 0.00")}
+    fun financialSummary(): List<String> = listOf("إجمالي المبيعات: ${sumDocuments("بيع")}","مرتجعات المبيعات: ${sumDocuments("مرتجع بيع")}","صافي المبيعات: ${sumDocuments("بيع")-sumDocuments("مرتجع بيع")}","إجمالي المشتريات: ${sumDocuments("شراء")}","مرتجعات المشتريات: ${sumDocuments("مرتجع شراء")}","صافي المشتريات: ${sumDocuments("شراء")-sumDocuments("مرتجع شراء")}","قيمة المخزون: ${inventoryValue()}","الأصناف منخفضة المخزون: ${lowStock()}","عدد القيود: ${journalCount()}")
     fun audit(user:String,action:String,details:String){insert("audit_log",ContentValues().apply{put("date",System.currentTimeMillis().toString());put("user_no",user);put("action",action);put("details",details)})}
     fun auditLog(): List<String> = queryStrings("SELECT date||' | '||user_no||' | '||action||' | '||details FROM audit_log ORDER BY id DESC LIMIT 100")
 }
