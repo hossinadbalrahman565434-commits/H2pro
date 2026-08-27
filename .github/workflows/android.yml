@@ -1,4 +1,4 @@
-name: بناء ومعاينة تطبيق H2pro
+name: بناء واختبار تطبيق H2pro
 
 on:
   push:
@@ -27,21 +27,7 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: تفعيل AndroidX
-        run: |
-          printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
-      - name: إصلاح صياغة Kotlin قبل البناء
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('app/src/main/java/com/h2pro/accounting/AccountingDb.kt')
-          s = p.read_text(encoding='utf-8')
-          for old, new in [
-              ('):List<String>=', '):List<String> ='),
-              ('):List<Account>=', '):List<Account> ='),
-          ]:
-              s = s.replace(old, new)
-          p.write_text(s, encoding='utf-8')
-          PY
+        run: printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
       - name: بناء APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
       - name: التحقق من APK
@@ -72,8 +58,7 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: تفعيل AndroidX
-        run: |
-          printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
+        run: printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
       - name: اختبار الدورة على محاكي ثابت
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -87,7 +72,6 @@ jobs:
           emulator-boot-timeout: 600
           script: |
             adb wait-for-device
-            adb shell getprop sys.boot_completed
             adb shell settings put global window_animation_scale 0 || true
             adb shell settings put global transition_animation_scale 0 || true
             adb shell settings put global animator_duration_scale 0 || true
@@ -101,47 +85,3 @@ jobs:
             app/build/reports/androidTests/connected/**
             app/build/outputs/androidTest-results/**
           if-no-files-found: warn
-
-  preview:
-    name: معاينة التطبيق قبل التثبيت
-    needs: [build, accounting-test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: جلب المشروع
-        uses: actions/checkout@v5
-      - name: تنزيل APK
-        uses: actions/download-artifact@v4
-        with:
-          name: H2pro-debug-apk
-          path: apk
-      - name: تشغيل محاكي Android والتقاط المعاينة
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          profile: pixel_2
-          cores: 4
-          force-avd-creation: true
-          emulator-options: -no-window -noaudio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect
-          disable-animations: true
-          emulator-boot-timeout: 600
-          script: |
-            adb install -r apk/app-debug.apk
-            adb shell am force-stop com.h2pro.accounting
-            adb shell monkey -p com.h2pro.accounting 1
-            sleep 5
-            mkdir -p preview
-            adb exec-out screencap -p > preview/01-login.png
-            adb shell input tap 540 820 || true
-            adb shell input text 1 || true
-            adb shell input tap 540 900 || true
-            adb shell input text 1234 || true
-            adb shell input tap 540 980 || true
-            sleep 3
-            adb exec-out screencap -p > preview/02-home.png
-      - name: رفع صور المعاينة
-        uses: actions/upload-artifact@v4
-        with:
-          name: H2pro-preview-screenshots
-          path: preview/*.png
-          if-no-files-found: error
