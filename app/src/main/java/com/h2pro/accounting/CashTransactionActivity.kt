@@ -16,11 +16,11 @@ class CashTransactionActivity : AppCompatActivity() {
     private val gold = Color.rgb(198,161,91)
     private val goldLight = Color.rgb(231,201,130)
     private val bg = Color.rgb(12,28,40)
-    private val text = Color.rgb(245,241,232)
+    private val textColor = Color.rgb(245,241,232)
 
     private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
     private fun field(h:String)=EditText(this).apply {
-        hint=h; textSize=17f; gravity=Gravity.RIGHT; setTextColor(text); setHintTextColor(Color.LTGRAY)
+        hint=h; textSize=17f; gravity=Gravity.RIGHT; setTextColor(textColor); setHintTextColor(Color.LTGRAY)
         setPadding(dp(12),dp(10),dp(12),dp(10)); minHeight=dp(54)
         background=GradientDrawable().apply { cornerRadius=dp(8).toFloat(); setColor(surface); setStroke(dp(1),gold) }
     }
@@ -30,7 +30,7 @@ class CashTransactionActivity : AppCompatActivity() {
         setOnClickListener{action()}
     }
     private fun label(s:String,size:Float=16f,bold:Boolean=false)=TextView(this).apply {
-        text=s; textSize=size; setTextColor(text); gravity=Gravity.RIGHT
+        text=s; textSize=size; setTextColor(textColor); gravity=Gravity.RIGHT
         if(bold) setTypeface(typeface,1); setPadding(dp(4),dp(6),dp(4),dp(6))
     }
     private fun margin()=LinearLayout.LayoutParams(-1,-2).apply{setMargins(0,dp(4),0,dp(4))}
