@@ -221,24 +221,44 @@ class GeneralLedgerActivity : AppCompatActivity() {
         }
         val date = field("التاريخ")
         val name = field("اسم الطرف")
+        val accountCode = field("رمز الحساب المقابل — مثال 501 أو 401")
         val amount = field("المبلغ")
         val ref = field("المرجع")
         val notes = field("البيان")
         r.addView(type, LinearLayout.LayoutParams(-1, dp(50)))
-        listOf(date, name, amount, ref, notes).forEach {
+        listOf(date, name, accountCode, amount, ref, notes).forEach {
             r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) })
         }
-        r.addView(btn("حفظ السند") {
+        r.addView(tv("القبض: مدين الصندوق / دائن الحساب المقابل. الصرف: مدين الحساب المقابل / دائن الصندوق.", 13f))
+        r.addView(btn("حفظ السند وإنشاء القيد") {
             val a = amount.text.toString().toDoubleOrNull() ?: 0.0
-            if (a <= 0 || name.text.isBlank()) {
-                toast("أدخل الطرف والمبلغ")
+            val cash = db.accounts().firstOrNull { it.code == "101" }
+            val counterpart = db.accounts().firstOrNull { it.code == accountCode.text.toString().trim() }
+            val voucherType = type.selectedItem.toString()
+            if (a <= 0 || name.text.isBlank() || cash == null || counterpart == null || counterpart.id == cash.id) {
+                toast("أدخل الطرف والمبلغ ورمز حساب مقابل صحيح")
                 return@btn
             }
-            db.addDocument(
-                type.selectedItem.toString(), name.text.toString(), a,
-                date.text.toString().ifBlank { "2026-08-26" }, ref.text.toString(), notes.text.toString()
-            )
-            toast("تم حفظ السند")
+            val dateValue = date.text.toString().ifBlank { "2026-08-29" }
+            val description = notes.text.toString().ifBlank { "$voucherType: ${name.text}" }
+            val lines = if (voucherType == "قبض") {
+                listOf(
+                    JournalLine(cash.id, a, 0.0, cash.currency, 1.0),
+                    JournalLine(counterpart.id, 0.0, a, counterpart.currency, 1.0)
+                )
+            } else {
+                listOf(
+                    JournalLine(counterpart.id, a, 0.0, counterpart.currency, 1.0),
+                    JournalLine(cash.id, 0.0, a, cash.currency, 1.0)
+                )
+            }
+            if (!db.saveJournal(dateValue, description, lines, ref.text.toString())) {
+                toast("تعذر إنشاء القيد — لم يتم حفظ السند")
+                return@btn
+            }
+            val documentId = db.addDocument(voucherType, name.text.toString(), a, dateValue, ref.text.toString(), description)
+            toast(if (documentId > 0) "تم حفظ السند والقيد المحاسبي" else "تم إنشاء القيد وتعذر حفظ سجل السند")
+            if (documentId > 0) voucher()
         })
         r.addView(btn("رجوع") { home() })
         showRoot(r)
