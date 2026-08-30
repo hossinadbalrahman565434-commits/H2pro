@@ -88,6 +88,7 @@ class GeneralLedgerActivity : AppCompatActivity() {
         r.addView(btn("مدخلات الأستاذ العام — البنوك والصناديق") { cashAndBanks() })
         r.addView(btn("عمليات الأستاذ العام — قيد يومي") { journal() })
         r.addView(btn("سند قبض / سند صرف") { voucher() })
+        r.addView(btn("كشف حساب وحركة الأرصدة") { accountStatement() })
         r.addView(btn("التقارير والكشوفات") { reports() })
         r.addView(btn("رجوع") { finish() })
         showRoot(r)
@@ -114,13 +115,7 @@ class GeneralLedgerActivity : AppCompatActivity() {
                 return@btn
             }
             val pid = db.accounts().firstOrNull { it.code == parent.text.toString().trim() }?.id ?: 0L
-            val ok = db.addAccount(
-                c,
-                n,
-                type.text.toString().trim().ifEmpty { "أصول" },
-                pid,
-                currency.text.toString().trim().ifEmpty { "محلي" }
-            )
+            val ok = db.addAccount(c, n, type.text.toString().trim().ifEmpty { "أصول" }, pid, currency.text.toString().trim().ifEmpty { "محلي" })
             toast(if (ok) "تم حفظ الحساب" else "تعذر حفظ الحساب")
             if (ok) accounts()
         })
@@ -139,33 +134,21 @@ class GeneralLedgerActivity : AppCompatActivity() {
         val bankNo = field("رقم الحساب")
         val bankCur = field("العملة")
         r.addView(tv("إضافة بنك", 17f, true))
-        listOf(bankName, bankNo, bankCur).forEach {
-            r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) })
-        }
+        listOf(bankName, bankNo, bankCur).forEach { r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) }) }
         r.addView(btn("حفظ البنك") {
-            if (bankName.text.isBlank()) {
-                toast("أدخل اسم البنك")
-                return@btn
-            }
+            if (bankName.text.isBlank()) { toast("أدخل اسم البنك"); return@btn }
             db.addBank(bankName.text.toString(), bankNo.text.toString(), bankCur.text.toString().ifBlank { "محلي" })
-            toast("تم حفظ البنك")
-            cashAndBanks()
+            toast("تم حفظ البنك"); cashAndBanks()
         })
         val boxName = field("اسم الصندوق")
         val boxNo = field("رقم الصندوق")
         val boxCur = field("العملة")
         r.addView(tv("إضافة صندوق", 17f, true))
-        listOf(boxName, boxNo, boxCur).forEach {
-            r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) })
-        }
+        listOf(boxName, boxNo, boxCur).forEach { r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) }) }
         r.addView(btn("حفظ الصندوق") {
-            if (boxName.text.isBlank()) {
-                toast("أدخل اسم الصندوق")
-                return@btn
-            }
+            if (boxName.text.isBlank()) { toast("أدخل اسم الصندوق"); return@btn }
             db.addCashbox(boxName.text.toString(), boxNo.text.toString(), boxCur.text.toString().ifBlank { "محلي" })
-            toast("تم حفظ الصندوق")
-            cashAndBanks()
+            toast("تم حفظ الصندوق"); cashAndBanks()
         })
         r.addView(btn("رجوع") { home() })
         showRoot(r)
@@ -181,31 +164,15 @@ class GeneralLedgerActivity : AppCompatActivity() {
         val debit = field("المبلغ المدين")
         val creditCode = field("رمز الحساب الدائن")
         val credit = field("المبلغ الدائن")
-        listOf(date, desc, ref, debitCode, debit, creditCode, credit).forEach {
-            r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) })
-        }
+        listOf(date, desc, ref, debitCode, debit, creditCode, credit).forEach { r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) }) }
         r.addView(btn("حفظ القيد") {
             val da = db.accounts().firstOrNull { it.code == debitCode.text.toString().trim() }
             val ca = db.accounts().firstOrNull { it.code == creditCode.text.toString().trim() }
             val d = debit.text.toString().toDoubleOrNull() ?: 0.0
             val c = credit.text.toString().toDoubleOrNull() ?: 0.0
-            if (da == null || ca == null) {
-                toast("تحقق من رموز الحسابات")
-                return@btn
-            }
-            if (d <= 0 || abs(d - c) > 0.005) {
-                toast("القيد غير متوازن")
-                return@btn
-            }
-            val ok = db.saveJournal(
-                date.text.toString().ifBlank { "2026-08-26" },
-                desc.text.toString(),
-                listOf(
-                    JournalLine(da.id, d, 0.0, da.currency, 1.0),
-                    JournalLine(ca.id, 0.0, c, ca.currency, 1.0)
-                ),
-                ref.text.toString()
-            )
+            if (da == null || ca == null) { toast("تحقق من رموز الحسابات"); return@btn }
+            if (d <= 0 || abs(d - c) > 0.005) { toast("القيد غير متوازن"); return@btn }
+            val ok = db.saveJournal(date.text.toString().ifBlank { "2026-08-26" }, desc.text.toString(), listOf(JournalLine(da.id, d, 0.0, da.currency, 1.0), JournalLine(ca.id, 0.0, c, ca.currency, 1.0)), ref.text.toString())
             toast(if (ok) "تم حفظ القيد بنجاح" else "تعذر حفظ القيد")
             if (ok) home()
         })
@@ -216,9 +183,7 @@ class GeneralLedgerActivity : AppCompatActivity() {
 
     private fun voucher() {
         val r = root("سند قبض / سند صرف")
-        val type = Spinner(this).apply {
-            adapter = ArrayAdapter(this@GeneralLedgerActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("قبض", "صرف"))
-        }
+        val type = Spinner(this).apply { adapter = ArrayAdapter(this@GeneralLedgerActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("قبض", "صرف")) }
         val date = field("التاريخ")
         val name = field("اسم الطرف")
         val accountCode = field("رمز الحساب المقابل — مثال 501 أو 401")
@@ -226,40 +191,55 @@ class GeneralLedgerActivity : AppCompatActivity() {
         val ref = field("المرجع")
         val notes = field("البيان")
         r.addView(type, LinearLayout.LayoutParams(-1, dp(50)))
-        listOf(date, name, accountCode, amount, ref, notes).forEach {
-            r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) })
-        }
+        listOf(date, name, accountCode, amount, ref, notes).forEach { r.addView(it, LinearLayout.LayoutParams(-1, dp(50)).apply { setMargins(0, dp(3), 0, dp(3)) }) }
         r.addView(tv("القبض: مدين الصندوق / دائن الحساب المقابل. الصرف: مدين الحساب المقابل / دائن الصندوق.", 13f))
         r.addView(btn("حفظ السند وإنشاء القيد") {
             val a = amount.text.toString().toDoubleOrNull() ?: 0.0
             val cash = db.accounts().firstOrNull { it.code == "101" }
             val counterpart = db.accounts().firstOrNull { it.code == accountCode.text.toString().trim() }
             val voucherType = type.selectedItem.toString()
-            if (a <= 0 || name.text.isBlank() || cash == null || counterpart == null || counterpart.id == cash.id) {
-                toast("أدخل الطرف والمبلغ ورمز حساب مقابل صحيح")
-                return@btn
-            }
+            if (a <= 0 || name.text.isBlank() || cash == null || counterpart == null || counterpart.id == cash.id) { toast("أدخل الطرف والمبلغ ورمز حساب مقابل صحيح"); return@btn }
             val dateValue = date.text.toString().ifBlank { "2026-08-29" }
             val description = notes.text.toString().ifBlank { "$voucherType: ${name.text}" }
-            val lines = if (voucherType == "قبض") {
-                listOf(
-                    JournalLine(cash.id, a, 0.0, cash.currency, 1.0),
-                    JournalLine(counterpart.id, 0.0, a, counterpart.currency, 1.0)
-                )
-            } else {
-                listOf(
-                    JournalLine(counterpart.id, a, 0.0, counterpart.currency, 1.0),
-                    JournalLine(cash.id, 0.0, a, cash.currency, 1.0)
-                )
-            }
-            if (!db.saveJournal(dateValue, description, lines, ref.text.toString())) {
-                toast("تعذر إنشاء القيد — لم يتم حفظ السند")
-                return@btn
-            }
+            val lines = if (voucherType == "قبض") listOf(JournalLine(cash.id, a, 0.0, cash.currency, 1.0), JournalLine(counterpart.id, 0.0, a, counterpart.currency, 1.0)) else listOf(JournalLine(counterpart.id, a, 0.0, counterpart.currency, 1.0), JournalLine(cash.id, 0.0, a, cash.currency, 1.0))
+            if (!db.saveJournal(dateValue, description, lines, ref.text.toString())) { toast("تعذر إنشاء القيد — لم يتم حفظ السند"); return@btn }
             val documentId = db.addDocument(voucherType, name.text.toString(), a, dateValue, ref.text.toString(), description)
             toast(if (documentId > 0) "تم حفظ السند والقيد المحاسبي" else "تم إنشاء القيد وتعذر حفظ سجل السند")
             if (documentId > 0) voucher()
         })
+        r.addView(btn("رجوع") { home() })
+        showRoot(r)
+    }
+
+    private fun accountStatement() {
+        val r = root("كشف الحساب والأرصدة")
+        val accounts = db.accounts()
+        if (accounts.isEmpty()) {
+            r.addView(tv("لا توجد حسابات", 17f, true))
+        } else {
+            val spinner = Spinner(this).apply {
+                adapter = ArrayAdapter(this@GeneralLedgerActivity, android.R.layout.simple_spinner_dropdown_item, accounts.map { "${it.code} — ${it.name}" })
+            }
+            r.addView(tv("اختر الحساب", 16f, true))
+            r.addView(spinner, LinearLayout.LayoutParams(-1, dp(52)))
+            val result = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = LinearLayout.LAYOUT_DIRECTION_RTL }
+            fun refresh() {
+                result.removeAllViews()
+                val account = accounts[spinner.selectedItemPosition]
+                val balance = db.accountBalance(account.id)
+                val nature = if (balance >= 0) "مدين" else "دائن"
+                val absolute = abs(balance)
+                result.addView(tv("${account.code} — ${account.name}", 19f, true))
+                result.addView(tv("نوع الحساب: ${account.type}"))
+                result.addView(tv("الرصيد الجاري: ${"%.2f".format(absolute)} $nature", 18f, true))
+                result.addView(tv("العملة: ${account.currency}"))
+                result.addView(tv("عدد القيود بالنظام: ${db.journalCount()}"))
+                result.addView(tv("ملاحظة: الرصيد محسوب من جميع حركات الحساب المسجلة في دفتر اليومية." , 13f))
+            }
+            r.addView(btn("عرض الرصيد") { refresh() })
+            r.addView(result)
+            refresh()
+        }
         r.addView(btn("رجوع") { home() })
         showRoot(r)
     }
