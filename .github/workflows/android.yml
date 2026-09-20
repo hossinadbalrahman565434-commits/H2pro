@@ -1,4 +1,4 @@
-name: بناء APK H2pro
+name: بناء واختبار APK H2pro
 
 on:
   push:
@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build:
-    name: بناء APK فقط
+    name: بناء واختبار APK
     runs-on: ubuntu-latest
     steps:
       - name: جلب المشروع
@@ -27,11 +27,19 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: تفعيل AndroidX
-        run: printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
-      - name: بناء APK فقط بدون اختبارات
+        run: printf '%s\\n' 'android.useAndroidX=true' 'android.enableJetifier=true' > gradle.properties
+      - name: بناء APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
       - name: التحقق من APK
         run: test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: تشغيل اختبارات Android المحاسبية
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          script: gradle :app:connectedDebugAndroidTest --stacktrace --no-daemon --console=plain
       - name: رفع APK النهائي
         uses: actions/upload-artifact@v4
         with:
