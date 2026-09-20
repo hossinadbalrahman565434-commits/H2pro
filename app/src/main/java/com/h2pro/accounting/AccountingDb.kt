@@ -10,6 +10,8 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
 class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", null, 6) {
+    private var sessionYear: Int? = null
+    private fun isSessionYearOpen(): Boolean { val y=sessionYear ?: return false; return readableDatabase.rawQuery("SELECT 1 FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1",arrayOf(y.toString())).use{it.moveToFirst()} }
     override fun onCreate(db: SQLiteDatabase) { createTables(db); seed(db); ensureRequiredAccounts(db) }
     private fun createTables(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS company(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, address TEXT, logo TEXT)")
