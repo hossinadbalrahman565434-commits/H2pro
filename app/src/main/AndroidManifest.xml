@@ -4,7 +4,7 @@
         android:allowBackup="true"
         android:icon="@drawable/h2pro_icon"
         android:roundIcon="@drawable/h2pro_icon"
-        android:label="H2pro"
+        android:label="H2pro - الآلة الحاسبة"
         android:supportsRtl="true"
         android:theme="@style/Theme.H2pro">
         <activity android:name=".CashTransactionActivity" android:exported="false" />
@@ -19,7 +19,8 @@
         <activity android:name=".SystemSetupActivity" android:exported="false" />
         <activity android:name=".ModulesActivity" android:exported="false" />
         <activity android:name=".DashboardActivity" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name=".CalculatorActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
