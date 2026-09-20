@@ -69,11 +69,38 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun saveUser(userNo:String,name:String,password:String,role:String)=try{val s=randomSalt();insert("users",ContentValues().apply{put("user_no",userNo);put("username",name);put("password","");put("password_salt",s);put("password_hash",hashPassword(password,s));put("role",role);put("active",1)})>0}catch(_:Exception){false}
     fun setUserActive(userNo:String, active:Boolean):Boolean = writableDatabase.update("users",ContentValues().apply{put("active",if(active)1 else 0)},"user_no=?",arrayOf(userNo))>0
     fun userList(): List<String> = queryStrings("SELECT user_no||' | '||username||' | '||role||' | '||CASE WHEN active=1 THEN 'نشط' ELSE 'موقوف' END FROM users ORDER BY user_no")
-    fun saveYear(year: Int, months: String, status: String) = try { insert("financial_years", ContentValues().apply { put("year", year); put("months", months); put("status", status) }) > 0 } catch (_: Exception) { false }
+    fun saveYear(year: Int, months: String, status: String): Boolean {
+        if (year < 1900 || year > 2200) return false
+        if (months.isBlank()) return false
+        if (status != "مفتوحة" && status != "مغلقة") return false
+        val normalizedMonths = months.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in 1..12 }.distinct().sorted()
+        if (normalizedMonths.isEmpty()) return false
+        if (normalizedMonths.size != months.split(",").size) return false
+        val db = writableDatabase
+        return try {
+            db.insertOrThrow("financial_years", null, ContentValues().apply {
+                put("year", year)
+                put("months", normalizedMonths.joinToString(","))
+                put("status", status)
+            }) > 0
+        } catch (_: Exception) { false }
+    }
     fun years(): List<String> = queryStrings("SELECT year||' | '||months||' | '||status FROM financial_years ORDER BY year DESC")
     fun saveRegion(country: String, province: String, city: String, district: String) { insert("regions", ContentValues().apply { put("country", country); put("province", province); put("city", city); put("district", district) }) }
     fun regions(): List<String> = queryStrings("SELECT country||' | '||province||' | '||city||' | '||district FROM regions ORDER BY country,province,city")
-    fun saveCurrency(name: String, equivalent: Double, local: Boolean, rate: Double) = try { insert("currencies", ContentValues().apply { put("name", name); put("equivalent", equivalent); put("is_local", if (local) 1 else 0); put("exchange_rate", rate) }) > 0 } catch (_: Exception) { false }
+    fun saveCurrency(name: String, equivalent: Double, local: Boolean, rate: Double): Boolean {
+        if (name.isBlank() || equivalent <= 0 || rate <= 0) return false
+        val db = writableDatabase
+        if (local && db.rawQuery("SELECT COUNT(*) FROM currencies WHERE is_local=1", null).use { it.moveToFirst() && it.getLong(0) > 0 }) return false
+        return try {
+            db.insertOrThrow("currencies", null, ContentValues().apply {
+                put("name", name.trim())
+                put("equivalent", equivalent)
+                put("is_local", if (local) 1 else 0)
+                put("exchange_rate", rate)
+            }) > 0
+        } catch (_: Exception) { false }
+    }
     fun currencies(): List<String> = queryStrings("SELECT name||' | معادل: '||equivalent||' | '||CASE WHEN is_local=1 THEN 'محلية' ELSE 'أجنبية' END||' | تحويل: '||exchange_rate FROM currencies ORDER BY name")
     fun saveCompany(name: String, phone: String, address: String, logo: String) { writableDatabase.update("company", ContentValues().apply { put("name", name); put("phone", phone); put("address", address); put("logo", logo) }, "id=1", null) }
     fun company(): Company = readableDatabase.rawQuery("SELECT name,phone,address,logo FROM company WHERE id=1", null).use { if (it.moveToFirst()) Company(it.getString(0), it.getString(1), it.getString(2), it.getString(3)) else Company("","","","") }
