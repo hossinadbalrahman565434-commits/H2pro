@@ -14,6 +14,7 @@ class AccountingCycleInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context.deleteDatabase("h2pro.db")
         val db = AccountingDb(context)
+        assertTrue(db.login("1", "1234", 2026))
         val itemCode = "TEST-${System.currentTimeMillis()}"
         assertTrue(db.addItem(itemCode, "اختبار دورة محاسبية", 100.0, 150.0, 0.0, 0.0))
         val itemId = context.openOrCreateDatabase("h2pro.db", 0, null).use { sql ->
@@ -50,4 +51,16 @@ class AccountingCycleInstrumentedTest {
         assertTrue(db.trialBalanceTotals().balanced)
         db.close()
     }
+    @Test
+    fun postingOutsideOpenFiscalMonthIsRejected() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.deleteDatabase("h2pro.db")
+        val db = AccountingDb(context)
+        assertTrue(db.login("1", "1234", 2026))
+        val cash = db.accounts().first { it.code == "101" }.id
+        val capital = db.accounts().first { it.code == "301" }.id
+        assertTrue(!db.saveJournal("2027-01-01", "خارج السنة", listOf(JournalLine(cash, 100.0, 0.0), JournalLine(capital, 0.0, 100.0))))
+        db.close()
+    }
+
 }
