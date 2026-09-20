@@ -5,6 +5,8 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import kotlin.math.abs
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
@@ -14,7 +16,11 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     private fun isSessionYearOpen(): Boolean { val y=sessionYear ?: return false; return readableDatabase.rawQuery("SELECT 1 FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1",arrayOf(y.toString())).use{it.moveToFirst()} }
     private fun isSessionDateOpen(date: String): Boolean {
         val y = sessionYear ?: return false
-        val parts = date.trim().split("-")
+        val normalized = date.trim()
+        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
+        val parsed = try { formatter.parse(normalized) } catch (_: Exception) { null } ?: return false
+        if (formatter.format(parsed) != normalized) return false
+        val parts = normalized.split("-")
         if (parts.size != 3) return false
         val dateYear = parts[0].toIntOrNull() ?: return false
         val month = parts[1].toIntOrNull() ?: return false
