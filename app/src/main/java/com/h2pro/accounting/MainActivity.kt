@@ -33,6 +33,8 @@ class MainActivity : AppCompatActivity() {
     private fun field(h:String,number:Boolean=false)=EditText(this).apply{hint=h;textSize=17f;gravity=Gravity.RIGHT;setTextColor(textLight);setHintTextColor(hintLight);setPadding(dp(14),dp(12),dp(14),dp(12));minHeight=dp(56);background=GradientDrawable().apply{shape=GradientDrawable.RECTANGLE;cornerRadius=dp(8).toFloat();setColor(surface);setStroke(dp(2),gold)};if(number)inputType=InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL}
     private fun btn(s:String,action:()->Unit)=Button(this).apply{text=s;isAllCaps=false;textSize=16f;setTypeface(typeface,1);setTextColor(goldLight);minHeight=dp(56);setPadding(dp(18),dp(8),dp(18),dp(8));background=GradientDrawable().apply{shape=GradientDrawable.RECTANGLE;cornerRadius=dp(8).toFloat();setColor(surface);setStroke(dp(2),gold)};stateListAnimator=null;setOnClickListener{action()}}
     private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
+    private fun allowed(permission:String):Boolean = db.hasPermission(currentUser, permission)
+    private fun guarded(permission:String, action:()->Unit) { if (allowed(permission)) action() else toast("ليس لديك صلاحية: $permission") }
     private fun now()=SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.US).format(Date())
     private fun money(v:Double)=String.format(Locale.US,"%,.2f",v)
 
