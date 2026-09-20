@@ -13,6 +13,7 @@ class AccountingScenarioTest {
     fun completePurchaseSaleReturnCycleKeepsTrialBalanceBalanced() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = AccountingDb(context)
+        assertTrue(db.login("1", "1234", 2026))
         val sql = db.writableDatabase
         listOf("journal_lines", "journals", "invoice_lines", "inventory_movements", "documents", "items").forEach { sql.delete(it, null, null) }
 
