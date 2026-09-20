@@ -113,6 +113,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun addAccount(code: String, name: String, type: String, parentId: Long = 0, currency: String = "محلي") = try { insert("accounts", ContentValues().apply { put("code", code); put("name", name); put("type", type); put("parent_id", parentId); put("level", if (parentId == 0L) 1 else 2); put("currency", currency) }) > 0 } catch (_: Exception) { false }
     fun accounts(): List<Account> = buildList { readableDatabase.rawQuery("SELECT id,code,name,type,parent_id,level,currency FROM accounts WHERE active=1 ORDER BY code", null).use { c -> while (c.moveToNext()) add(Account(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getInt(5), c.getString(6))) } }
     fun saveJournal(date: String, description: String, lines: List<JournalLine>, reference: String = ""): Boolean {
+        if (!isSessionYearOpen()) return false
         val debit = lines.sumOf { it.debit }; val credit = lines.sumOf { it.credit }; if (lines.size < 2 || debit <= 0 || abs(debit - credit) > 0.005) return false
         val d = writableDatabase; d.beginTransaction(); return try { val jid = d.insertOrThrow("journals", null, ContentValues().apply { put("date", date); put("description", description); put("reference", reference) }); lines.forEach { l -> addLine(d, jid, l.accountId, l.debit, l.credit, l.currency, l.rate) }; d.setTransactionSuccessful(); true } catch (_: Exception) { false } finally { d.endTransaction() }
     }
@@ -128,6 +129,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun saveInventoryMovement(itemId: Long, date: String, kind: String, qty: Double, price: Double, ref: String) { insert("inventory_movements", ContentValues().apply { put("item_id", itemId); put("date", date); put("kind", kind); put("qty", qty); put("price", price); put("reference", ref) }) }
 
     fun saveInvoice(kind: String, date: String, party: String, lines: List<InvoiceLine>, reference: String = "", notes: String = "", paymentMode: String = "نقدي"): Long {
+        if (!isSessionYearOpen()) return -1
         if (lines.isEmpty() || lines.any { it.qty <= 0 || it.price < 0 }) return -1
         val total = lines.sumOf { it.qty * it.price }; if (total <= 0) return -1
         val sale = kind == "بيع"; val credit = paymentMode == "آجل"; val d = writableDatabase; d.beginTransaction()
@@ -155,6 +157,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     }
 
     fun saveReturn(kind: String, date: String, party: String, lines: List<InvoiceLine>, reference: String = "", notes: String = "", paymentMode: String = "نقدي"): Long {
+        if (!isSessionYearOpen()) return -1
         if (lines.isEmpty() || lines.any { it.qty <= 0 || it.price < 0 }) return -1
         val purchaseReturn = kind == "مرتجع شراء"; val credit = paymentMode == "آجل"; val d = writableDatabase; d.beginTransaction()
         return try {
