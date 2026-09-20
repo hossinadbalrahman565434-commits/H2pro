@@ -52,6 +52,25 @@ class AccountingCycleInstrumentedTest {
         db.close()
     }
     @Test
+    fun invalidCalendarDateIsRejected() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.deleteDatabase("h2pro.db")
+        val db = AccountingDb(context)
+        assertTrue(db.login("1", "1234", 2026))
+        val cash = db.accounts().first { it.code == "101" }.id
+        val capital = db.accounts().first { it.code == "301" }.id
+        assertTrue(!db.saveJournal("2026-02-31", "تاريخ تقويمي غير صحيح", listOf(
+            JournalLine(cash, 100.0, 0.0),
+            JournalLine(capital, 0.0, 100.0)
+        )))
+        assertTrue(!db.saveJournal("2026-13-01", "شهر غير صحيح", listOf(
+            JournalLine(cash, 100.0, 0.0),
+            JournalLine(capital, 0.0, 100.0)
+        )))
+        db.close()
+    }
+
+    @Test
     fun postingOutsideOpenFiscalMonthIsRejected() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context.deleteDatabase("h2pro.db")
