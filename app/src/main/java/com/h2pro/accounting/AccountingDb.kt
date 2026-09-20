@@ -5,15 +5,18 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import kotlin.math.abs
+import java.security.SecureRandom
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
-class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", null, 5) {
+class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", null, 6) {
     override fun onCreate(db: SQLiteDatabase) { createTables(db); seed(db); ensureRequiredAccounts(db) }
     private fun createTables(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS company(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, address TEXT, logo TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS financial_years(id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER UNIQUE, months TEXT, status TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS regions(id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, province TEXT, city TEXT, district TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS currencies(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, equivalent REAL DEFAULT 1, is_local INTEGER DEFAULT 0, exchange_rate REAL DEFAULT 1)")
-        db.execSQL("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT, user_no TEXT UNIQUE, username TEXT, password TEXT, role TEXT)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT, user_no TEXT UNIQUE, username TEXT, password TEXT, role TEXT, active INTEGER DEFAULT 1, password_hash TEXT, password_salt TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS permissions(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, module TEXT, allowed INTEGER DEFAULT 1, UNIQUE(user_id,module))")
         db.execSQL("CREATE TABLE IF NOT EXISTS banks(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, account_no TEXT, currency TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS cashboxes(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, box_no TEXT, currency TEXT)")
@@ -24,6 +27,9 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
         db.execSQL("CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT, buy REAL DEFAULT 0, sale REAL DEFAULT 0, qty REAL DEFAULT 0, min_qty REAL DEFAULT 0, unit TEXT DEFAULT 'قطعة')")
         db.execSQL("CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, date TEXT, name TEXT, amount REAL DEFAULT 0, reference TEXT, notes TEXT, payment_mode TEXT DEFAULT 'نقدي')")
         addColumnIfMissing(db, "documents", "payment_mode", "TEXT DEFAULT 'نقدي'")
+        addColumnIfMissing(db, "users", "active", "INTEGER DEFAULT 1")
+        addColumnIfMissing(db, "users", "password_hash", "TEXT")
+        addColumnIfMissing(db, "users", "password_salt", "TEXT")
         db.execSQL("CREATE TABLE IF NOT EXISTS invoice_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, item_id INTEGER, qty REAL, price REAL, total REAL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS inventory_movements(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, item_id INTEGER, kind TEXT, qty REAL, price REAL, reference TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, user_no TEXT, action TEXT, details TEXT)")
@@ -40,7 +46,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
         if (count("company", db) == 0L) db.execSQL("INSERT INTO company(id,name,phone,address,logo) VALUES(1,'شركتي التجارية','01-234567','صنعاء، اليمن','')")
         if (count("financial_years", db) == 0L) db.execSQL("INSERT INTO financial_years(year,months,status) VALUES(2026,'1,2,3,4,5,6,7,8,9,10,11,12','مفتوحة')")
         if (count("currencies", db) == 0L) db.execSQL("INSERT INTO currencies(name,equivalent,is_local,exchange_rate) VALUES('ريال يمني',1,1,1)")
-        if (count("users", db) == 0L) db.execSQL("INSERT INTO users(user_no,username,password,role) VALUES('1','مدير النظام','1234','مدير النظام')")
+        if (count("users", db) == 0L) { val v=ContentValues().apply { put("user_no","1"); put("username","مدير النظام"); put("password",""); put("role","مدير النظام"); put("active",1) }; val s=randomSalt(); v.put("password_salt",s); v.put("password_hash",hashPassword("1234",s)); db.insert("users",null,v) }
         if (count("accounts", db) == 0L) {
             val rows = listOf(arrayOf("1","الأصول","أصول","0","1"),arrayOf("101","الصندوق","أصول","1","2"),arrayOf("102","البنك","أصول","1","2"),arrayOf("103","المخزون","أصول","1","2"),arrayOf("2","الخصوم","خصوم","0","1"),arrayOf("201","الموردون","خصوم","2","2"),arrayOf("3","حقوق الملكية","حقوق ملكية","0","1"),arrayOf("301","رأس المال","حقوق ملكية","3","2"),arrayOf("4","الإيرادات","إيرادات","0","1"),arrayOf("401","المبيعات","إيرادات","4","2"),arrayOf("402","مرتجعات المبيعات","إيرادات","4","2"),arrayOf("5","المصروفات","مصروفات","0","1"),arrayOf("501","المشتريات","مصروفات","5","2"),arrayOf("502","المصاريف التشغيلية","مصروفات","5","2"),arrayOf("503","تكلفة المبيعات","مصروفات","5","2"))
             rows.forEach { a -> db.insert("accounts", null, ContentValues().apply { put("code", a[0]); put("name", a[1]); put("type", a[2]); put("parent_id", a[3].toLong()); put("level", a[4].toInt()) }) }
@@ -52,13 +58,16 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
         required.forEach { a -> if (findAccountId(db, a[0].toString()) == 0L) db.insert("accounts", null, ContentValues().apply { put("code", a[0].toString()); put("name", a[1].toString()); put("type", a[2].toString()); put("parent_id", a[3].toString().toLong()); put("level", a[4].toString().toInt()); put("currency", "محلي") }) }
     }
     private fun count(table: String, db: SQLiteDatabase = writableDatabase): Long = db.rawQuery("SELECT COUNT(*) FROM $table", null).use { if (it.moveToFirst()) it.getLong(0) else 0 }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { createTables(db); seed(db); ensureRequiredAccounts(db) }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { createTables(db); migratePasswords(db); seed(db); ensureRequiredAccounts(db) }
+    private fun migratePasswords(db: SQLiteDatabase) { db.rawQuery("SELECT id,password,password_hash,password_salt FROM users",null).use { c -> while(c.moveToNext()){ val id=c.getLong(0); val legacy=c.getString(1)?:""; val hash=c.getString(2); val salt=c.getString(3); if(hash.isNullOrBlank()&&legacy.isNotBlank()){ val s=if(salt.isNullOrBlank()) randomSalt() else salt; db.update("users",ContentValues().apply{put("password","");put("password_salt",s);put("password_hash",hashPassword(legacy,s))},"id=?",arrayOf(id.toString())) } } } }
+    private fun randomSalt(): String { val b=ByteArray(16); SecureRandom().nextBytes(b); return android.util.Base64.encodeToString(b,android.util.Base64.NO_WRAP) }
+    private fun hashPassword(password:String,salt:String):String { val spec=PBEKeySpec(password.toCharArray(),android.util.Base64.decode(salt,android.util.Base64.NO_WRAP),120000,256); return try{android.util.Base64.encodeToString(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded,android.util.Base64.NO_WRAP)}finally{spec.clearPassword()} }
     private fun insert(table: String, values: ContentValues) = writableDatabase.insert(table, null, values)
     private fun queryStrings(sql: String, args: Array<String>? = null): List<String> = buildList { readableDatabase.rawQuery(sql, args).use { c -> while (c.moveToNext()) add(c.getString(0)) } }
-    fun login(userNo: String, password: String) = readableDatabase.rawQuery("SELECT id FROM users WHERE user_no=? AND password=?", arrayOf(userNo, password)).use { it.moveToFirst() }
-    fun changePassword(userNo: String, newPassword: String) = writableDatabase.update("users", ContentValues().apply { put("password", newPassword) }, "user_no=?", arrayOf(userNo)) > 0
-    fun saveUser(userNo: String, name: String, password: String, role: String) = try { insert("users", ContentValues().apply { put("user_no", userNo); put("username", name); put("password", password); put("role", role) }) > 0 } catch (_: Exception) { false }
-    fun userList(): List<String> = queryStrings("SELECT user_no||' | '||username||' | '||role FROM users ORDER BY user_no")
+    fun login(userNo:String,password:String,year:Int):Boolean { val open=readableDatabase.rawQuery("SELECT id FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1",arrayOf(year.toString())).use{it.moveToFirst()}; if(!open)return false; return readableDatabase.rawQuery("SELECT password_hash,password_salt,active FROM users WHERE user_no=? LIMIT 1",arrayOf(userNo)).use{if(!it.moveToFirst()||it.getInt(2)!=1)return false; val h=it.getString(0); val s=it.getString(1); !h.isNullOrBlank()&&!s.isNullOrBlank()&&hashPassword(password,s)==h} }
+    fun changePassword(userNo:String,newPassword:String):Boolean { val s=randomSalt(); return writableDatabase.update("users",ContentValues().apply{put("password","");put("password_salt",s);put("password_hash",hashPassword(newPassword,s))},"user_no=?",arrayOf(userNo))>0 }
+    fun saveUser(userNo:String,name:String,password:String,role:String)=try{val s=randomSalt();insert("users",ContentValues().apply{put("user_no",userNo);put("username",name);put("password","");put("password_salt",s);put("password_hash",hashPassword(password,s));put("role",role);put("active",1)})>0}catch(_:Exception){false}
+    fun userList(): List<String> = queryStrings("SELECT user_no||' | '||username||' | '||role||' | '||CASE WHEN active=1 THEN 'نشط' ELSE 'موقوف' END FROM users ORDER BY user_no")
     fun saveYear(year: Int, months: String, status: String) = try { insert("financial_years", ContentValues().apply { put("year", year); put("months", months); put("status", status) }) > 0 } catch (_: Exception) { false }
     fun years(): List<String> = queryStrings("SELECT year||' | '||months||' | '||status FROM financial_years ORDER BY year DESC")
     fun saveRegion(country: String, province: String, city: String, district: String) { insert("regions", ContentValues().apply { put("country", country); put("province", province); put("city", city); put("district", district) }) }
