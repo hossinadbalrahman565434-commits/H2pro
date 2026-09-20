@@ -12,6 +12,17 @@ import javax.crypto.spec.PBEKeySpec
 class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", null, 6) {
     private var sessionYear: Int? = null
     private fun isSessionYearOpen(): Boolean { val y=sessionYear ?: return false; return readableDatabase.rawQuery("SELECT 1 FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1",arrayOf(y.toString())).use{it.moveToFirst()} }
+    private fun isSessionDateOpen(date: String): Boolean {
+        val y = sessionYear ?: return false
+        val parts = date.trim().split("-")
+        if (parts.size != 3) return false
+        val dateYear = parts[0].toIntOrNull() ?: return false
+        val month = parts[1].toIntOrNull() ?: return false
+        if (dateYear != y || month !in 1..12) return false
+        return readableDatabase.rawQuery("SELECT months FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1", arrayOf(y.toString())).use {
+            it.moveToFirst() && it.getString(0).split(",").mapNotNull { m -> m.trim().toIntOrNull() }.contains(month)
+        }
+    }
     override fun onCreate(db: SQLiteDatabase) { createTables(db); seed(db); ensureRequiredAccounts(db) }
     private fun createTables(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS company(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, address TEXT, logo TEXT)")
@@ -93,6 +104,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun saveCurrency(name: String, equivalent: Double, local: Boolean, rate: Double): Boolean {
         if (name.isBlank() || equivalent <= 0 || rate <= 0) return false
         val db = writableDatabase
+        if (db.rawQuery("SELECT COUNT(*) FROM currencies WHERE name=?", arrayOf(name.trim())).use { it.moveToFirst() && it.getLong(0) > 0 }) return false
         if (local && db.rawQuery("SELECT COUNT(*) FROM currencies WHERE is_local=1", null).use { it.moveToFirst() && it.getLong(0) > 0 }) return false
         return try {
             db.insertOrThrow("currencies", null, ContentValues().apply {
@@ -113,7 +125,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun addAccount(code: String, name: String, type: String, parentId: Long = 0, currency: String = "محلي") = try { insert("accounts", ContentValues().apply { put("code", code); put("name", name); put("type", type); put("parent_id", parentId); put("level", if (parentId == 0L) 1 else 2); put("currency", currency) }) > 0 } catch (_: Exception) { false }
     fun accounts(): List<Account> = buildList { readableDatabase.rawQuery("SELECT id,code,name,type,parent_id,level,currency FROM accounts WHERE active=1 ORDER BY code", null).use { c -> while (c.moveToNext()) add(Account(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getInt(5), c.getString(6))) } }
     fun saveJournal(date: String, description: String, lines: List<JournalLine>, reference: String = ""): Boolean {
-        if (!isSessionYearOpen()) return false
+        if (!isSessionYearOpen() || !isSessionDateOpen(date)) return false
         val debit = lines.sumOf { it.debit }; val credit = lines.sumOf { it.credit }; if (lines.size < 2 || debit <= 0 || abs(debit - credit) > 0.005) return false
         val d = writableDatabase; d.beginTransaction(); return try { val jid = d.insertOrThrow("journals", null, ContentValues().apply { put("date", date); put("description", description); put("reference", reference) }); lines.forEach { l -> addLine(d, jid, l.accountId, l.debit, l.credit, l.currency, l.rate) }; d.setTransactionSuccessful(); true } catch (_: Exception) { false } finally { d.endTransaction() }
     }
@@ -122,14 +134,15 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     fun contacts(kind: String): List<String> = queryStrings("SELECT name||CASE WHEN phone='' THEN '' ELSE ' - '||phone END FROM contacts WHERE kind=? ORDER BY name", arrayOf(kind))
     fun addItem(code: String, name: String, buy: Double, sale: Double, qty: Double, minQty: Double, unit: String = "قطعة") = try { insert("items", ContentValues().apply { put("code", code); put("name", name); put("buy", buy); put("sale", sale); put("qty", qty); put("min_qty", minQty); put("unit", unit) }) > 0 } catch (_: Exception) { false }
     fun items(): List<String> = queryStrings("SELECT code||' - '||name||' | الكمية: '||qty||' '||unit FROM items ORDER BY name")
-    fun addDocument(kind: String, name: String, amount: Double, date: String, reference: String = "", notes: String = "") = if (isSessionYearOpen()) insert("documents", ContentValues().apply { put("kind", kind); put("name", name); put("amount", amount); put("date", date); put("reference", reference); put("notes", notes); put("payment_mode", "نقدي") }) else -1
+    fun addDocument(kind: String, name: String, amount: Double, date: String, reference: String = "", notes: String = "") = if (isSessionYearOpen() && isSessionDateOpen(date)) insert("documents", ContentValues().apply { put("kind", kind); put("name", name); put("amount", amount); put("date", date); put("reference", reference); put("notes", notes); put("payment_mode", "نقدي") }) else -1
     fun sumDocuments(kind: String): Double = readableDatabase.rawQuery("SELECT COALESCE(SUM(amount),0) FROM documents WHERE kind=?", arrayOf(kind)).use { if (it.moveToFirst()) it.getDouble(0) else 0.0 }
     fun inventoryValue(): Double = readableDatabase.rawQuery("SELECT COALESCE(SUM(qty*buy),0) FROM items", null).use { if (it.moveToFirst()) it.getDouble(0) else 0.0 }
     fun lowStock(): Long = readableDatabase.rawQuery("SELECT COUNT(*) FROM items WHERE qty<=min_qty", null).use { if (it.moveToFirst()) it.getLong(0) else 0 }
-    fun saveInventoryMovement(itemId: Long, date: String, kind: String, qty: Double, price: Double, ref: String) { insert("inventory_movements", ContentValues().apply { put("item_id", itemId); put("date", date); put("kind", kind); put("qty", qty); put("price", price); put("reference", ref) }) }
+    fun saveInventoryMovement(itemId: Long, date: String, kind: String, qty: Double, price: Double, ref: String) { if (!isSessionYearOpen() || !isSessionDateOpen(date)) return; insert("inventory_movements", ContentValues().apply { put("item_id", itemId); put("date", date); put("kind", kind); put("qty", qty); put("price", price); put("reference", ref) }) }
 
     fun saveInvoice(kind: String, date: String, party: String, lines: List<InvoiceLine>, reference: String = "", notes: String = "", paymentMode: String = "نقدي"): Long {
-        if (!isSessionYearOpen()) return -1
+        if (!isSessionYearOpen() || !isSessionDateOpen(date)) return -1
+        if (kind != "شراء" && kind != "بيع") return -1
         if (lines.isEmpty() || lines.any { it.qty <= 0 || it.price < 0 }) return -1
         val total = lines.sumOf { it.qty * it.price }; if (total <= 0) return -1
         val sale = kind == "بيع"; val credit = paymentMode == "آجل"; val d = writableDatabase; d.beginTransaction()
@@ -157,7 +170,8 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     }
 
     fun saveReturn(kind: String, date: String, party: String, lines: List<InvoiceLine>, reference: String = "", notes: String = "", paymentMode: String = "نقدي"): Long {
-        if (!isSessionYearOpen()) return -1
+        if (!isSessionYearOpen() || !isSessionDateOpen(date)) return -1
+        if (kind != "مرتجع شراء" && kind != "مرتجع بيع") return -1
         if (lines.isEmpty() || lines.any { it.qty <= 0 || it.price < 0 }) return -1
         val purchaseReturn = kind == "مرتجع شراء"; val credit = paymentMode == "آجل"; val d = writableDatabase; d.beginTransaction()
         return try {
