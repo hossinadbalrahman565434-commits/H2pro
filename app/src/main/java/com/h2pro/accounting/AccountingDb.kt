@@ -202,6 +202,14 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     private fun saveInventoryMovementWithDb(d: SQLiteDatabase, itemId: Long, date: String, kind: String, qty: Double, price: Double, ref: String) { d.insertOrThrow("inventory_movements", null, ContentValues().apply { put("item_id", itemId); put("date", date); put("kind", kind); put("qty", qty); put("price", price); put("reference", ref) }) }
     private fun addLine(d: SQLiteDatabase, journalId: Long, accountId: Long, debit: Double, credit: Double, currency: String = "محلي", rate: Double = 1.0) { d.insertOrThrow("journal_lines", null, ContentValues().apply { put("journal_id", journalId); put("account_id", accountId); put("debit", debit); put("credit", credit); put("currency", currency); put("rate", rate) }) }
     private fun findAccountId(d: SQLiteDatabase, code: String): Long = d.rawQuery("SELECT id FROM accounts WHERE code=?", arrayOf(code)).use { if (it.moveToFirst()) it.getLong(0) else 0 }
+    fun purchaseDocuments(): List<String> = queryStrings(
+        "SELECT id||' | '||date||' | '||name||' | '||amount||' | '||payment_mode FROM documents WHERE kind='شراء' ORDER BY id DESC"
+    )
+
+    fun returnDocuments(): List<String> = queryStrings(
+        "SELECT id||' | '||date||' | '||kind||' | '||name||' | '||amount||' | '||payment_mode FROM documents WHERE kind IN ('مرتجع بيع','مرتجع شراء') ORDER BY id DESC"
+    )
+
     fun invoiceTotal(documentId: Long): Double = readableDatabase.rawQuery("SELECT COALESCE(SUM(total),0) FROM invoice_lines WHERE document_id=?", arrayOf(documentId.toString())).use { if (it.moveToFirst()) it.getDouble(0) else 0.0 }
     fun invoiceLines(documentId: Long): List<String> = queryStrings("SELECT i.code||' - '||i.name||' | '||l.qty||' × '||l.price||' = '||l.total FROM invoice_lines l JOIN items i ON i.id=l.item_id WHERE l.document_id=?", arrayOf(documentId.toString()))
     fun customerSupplierBalance(kind: String, name: String): Double { val positive = if (kind == "عميل") "بيع" else "شراء"; val negative = if (kind == "عميل") "مرتجع بيع" else "مرتجع شراء"; return readableDatabase.rawQuery("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount WHEN kind=? THEN -amount ELSE 0 END),0) FROM documents WHERE name=? AND payment_mode='آجل'", arrayOf(positive, negative, name)).use { if (it.moveToFirst()) it.getDouble(0) else 0.0 } }
