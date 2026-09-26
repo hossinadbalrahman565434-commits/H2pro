@@ -12,7 +12,8 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
 class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", null, 6) {
-    private var sessionYear: Int? = null
+    private val appContext = context.applicationContext
+    private var sessionYear: Int? = appContext.getSharedPreferences("h2pro_session", Context.MODE_PRIVATE).getInt("session_year", 0).takeIf { it > 0 }
     private fun isSessionYearOpen(): Boolean { val y=sessionYear ?: return false; return readableDatabase.rawQuery("SELECT 1 FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1",arrayOf(y.toString())).use{it.moveToFirst()} }
     private fun isSessionDateOpen(date: String): Boolean {
         val y = sessionYear ?: return false
@@ -83,7 +84,7 @@ class AccountingDb(context: Context) : SQLiteOpenHelper(context, "h2pro.db", nul
     private fun hashPassword(password:String,salt:String):String { val spec=PBEKeySpec(password.toCharArray(),android.util.Base64.decode(salt,android.util.Base64.NO_WRAP),120000,256); return try{android.util.Base64.encodeToString(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded,android.util.Base64.NO_WRAP)}finally{spec.clearPassword()} }
     private fun insert(table: String, values: ContentValues) = writableDatabase.insert(table, null, values)
     private fun queryStrings(sql: String, args: Array<String>? = null): List<String> = buildList { readableDatabase.rawQuery(sql, args).use { c -> while (c.moveToNext()) add(c.getString(0)) } }
-    fun login(userNo:String,password:String,year:Int):Boolean { val open=readableDatabase.rawQuery("SELECT id FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1",arrayOf(year.toString())).use{it.moveToFirst()}; if(!open)return false; val ok=readableDatabase.rawQuery("SELECT password_hash,password_salt,active FROM users WHERE user_no=? LIMIT 1",arrayOf(userNo)).use{if(!it.moveToFirst()||it.getInt(2)!=1)return false; val h=it.getString(0); val s=it.getString(1); !h.isNullOrBlank()&&!s.isNullOrBlank()&&hashPassword(password,s)==h}; if(ok) sessionYear=year; return ok }
+    fun login(userNo:String,password:String,year:Int):Boolean { val open=readableDatabase.rawQuery("SELECT id FROM financial_years WHERE year=? AND status='مفتوحة' LIMIT 1",arrayOf(year.toString())).use{it.moveToFirst()}; if(!open)return false; val ok=readableDatabase.rawQuery("SELECT password_hash,password_salt,active FROM users WHERE user_no=? LIMIT 1",arrayOf(userNo)).use{if(!it.moveToFirst()||it.getInt(2)!=1)return false; val h=it.getString(0); val s=it.getString(1); !h.isNullOrBlank()&&!s.isNullOrBlank()&&hashPassword(password,s)==h}; if(ok) { sessionYear=year; appContext.getSharedPreferences("h2pro_session", Context.MODE_PRIVATE).edit().putInt("session_year", year).apply() }; return ok }
     fun changePassword(userNo:String,newPassword:String):Boolean { val s=randomSalt(); return writableDatabase.update("users",ContentValues().apply{put("password","");put("password_salt",s);put("password_hash",hashPassword(newPassword,s))},"user_no=?",arrayOf(userNo))>0 }
     fun saveUser(userNo:String,name:String,password:String,role:String)=try{val s=randomSalt();insert("users",ContentValues().apply{put("user_no",userNo);put("username",name);put("password","");put("password_salt",s);put("password_hash",hashPassword(password,s));put("role",role);put("active",1)})>0}catch(_:Exception){false}
     fun setUserActive(userNo:String, active:Boolean):Boolean = writableDatabase.update("users",ContentValues().apply{put("active",if(active)1 else 0)},"user_no=?",arrayOf(userNo))>0
